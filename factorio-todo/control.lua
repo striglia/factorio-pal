@@ -1,9 +1,38 @@
 local mod_gui = require("__core__.lualib.mod-gui")
 
+-- Goal templates organized by category
+local GOAL_TEMPLATES = {
+    planetary = {
+        "establish-vulcanus",
+        "master-gleba",
+        "survive-aquilo", 
+        "exploit-fulgora"
+    },
+    quality = {
+        "quality-infrastructure",
+        "legendary-production"
+    },
+    logistics = {
+        "interplanetary-logistics",
+        "elevated-rails"
+    },
+    research = {
+        "unlock-space-science",
+        "achieve-fusion-power"
+    }
+}
+
 -- Initialize storage on game start
 script.on_init(function()
     storage.todos = {}
     storage.next_todo_id = 1
+    storage.goal_settings = {
+        goals_enabled = false,
+        active_goals = {}
+    }
+    storage.goals = {}
+    storage.next_goal_id = 1
+    storage.goal_links = {}
 end)
 
 -- Handle configuration changes (mod updates, etc.)
@@ -13,6 +42,21 @@ script.on_configuration_changed(function()
     end
     if not storage.next_todo_id then
         storage.next_todo_id = 1
+    end
+    if not storage.goal_settings then
+        storage.goal_settings = {
+            goals_enabled = false,
+            active_goals = {}
+        }
+    end
+    if not storage.goals then
+        storage.goals = {}
+    end
+    if not storage.next_goal_id then
+        storage.next_goal_id = 1
+    end
+    if not storage.goal_links then
+        storage.goal_links = {}
     end
     -- Add order field to existing todos if missing
     for i, todo in ipairs(storage.todos) do
@@ -106,6 +150,16 @@ local function create_todo_window(player)
         caption = {"gui.todo-clear-completed"}
     }
     
+    -- Add enable goals button if goals not enabled
+    if not storage.goal_settings.goals_enabled then
+        controls_flow.add{
+            type = "button",
+            name = "enable_goals_button",
+            caption = {"gui-goals.enable-goals"},
+            style = "green_button"
+        }
+    end
+    
     return window
 end
 
@@ -114,6 +168,153 @@ local function destroy_todo_window(player)
     local frame_flow = mod_gui.get_frame_flow(player)
     if frame_flow.todo_window then
         frame_flow.todo_window.destroy()
+    end
+end
+
+-- Create the goals browser window
+local function create_goals_browser(player)
+    local frame_flow = mod_gui.get_frame_flow(player)
+    if frame_flow.goals_browser then
+        return frame_flow.goals_browser
+    end
+    
+    local browser = frame_flow.add{
+        type = "frame",
+        name = "goals_browser",
+        direction = "vertical",
+        caption = {"gui-goals.goals-browser-title"}
+    }
+    
+    -- Description
+    browser.add{
+        type = "label",
+        caption = {"gui-goals.goals-browser-description"},
+        style = "description_label"
+    }
+    
+    -- Goal sections
+    local sections_scroll = browser.add{
+        type = "scroll-pane",
+        name = "sections_scroll",
+        horizontal_scroll_policy = "never",
+        vertical_scroll_policy = "auto"
+    }
+    sections_scroll.style.maximal_height = 400
+    sections_scroll.style.minimal_width = 500
+    
+    local sections_list = sections_scroll.add{
+        type = "flow",
+        name = "sections_list",
+        direction = "vertical"
+    }
+    
+    -- Build goal sections
+    for section_id, goal_list in pairs(GOAL_TEMPLATES) do
+        local section_frame = sections_list.add{
+            type = "frame",
+            name = "section_" .. section_id,
+            style = "inside_shallow_frame"
+        }
+        
+        -- Section header
+        local section_header = section_frame.add{
+            type = "flow",
+            name = "header_" .. section_id,
+            direction = "horizontal"
+        }
+        
+        section_header.add{
+            type = "button",
+            name = "toggle_section_" .. section_id,
+            caption = {"gui-goals.section-expand"},
+            style = "mini_button"
+        }
+        
+        section_header.add{
+            type = "label",
+            caption = {"goal-sections." .. section_id},
+            style = "heading_2_label"
+        }
+        
+        -- Goals list (initially collapsed)
+        local goals_container = section_frame.add{
+            type = "flow",
+            name = "goals_" .. section_id,
+            direction = "vertical",
+            visible = false
+        }
+        
+        for _, goal_id in ipairs(goal_list) do
+            local goal_flow = goals_container.add{
+                type = "flow",
+                name = "goal_flow_" .. goal_id,
+                direction = "horizontal"
+            }
+            
+            -- Goal checkbox
+            local is_active = false
+            for _, active_goal in ipairs(storage.goal_settings.active_goals) do
+                if active_goal == goal_id then
+                    is_active = true
+                    break
+                end
+            end
+            
+            goal_flow.add{
+                type = "checkbox",
+                name = "goal_checkbox_" .. goal_id,
+                state = is_active
+            }
+            
+            -- Goal info
+            local goal_info = goal_flow.add{
+                type = "flow",
+                name = "goal_info_" .. goal_id,
+                direction = "vertical"
+            }
+            
+            goal_info.add{
+                type = "label",
+                caption = {"goal-templates." .. goal_id},
+                style = "bold_label"
+            }
+            
+            goal_info.add{
+                type = "label",
+                caption = {"goal-descriptions." .. goal_id},
+                style = "description_label"
+            }
+        end
+    end
+    
+    -- Controls
+    local browser_controls = browser.add{
+        type = "flow",
+        name = "browser_controls",
+        direction = "horizontal"
+    }
+    
+    browser_controls.add{
+        type = "button",
+        name = "goals_browser_apply",
+        caption = {"gui-goals.goals-browser-apply"},
+        style = "confirm_button"
+    }
+    
+    browser_controls.add{
+        type = "button",
+        name = "goals_browser_close",
+        caption = {"gui-goals.goals-browser-close"}
+    }
+    
+    return browser
+end
+
+-- Destroy the goals browser
+local function destroy_goals_browser(player)
+    local frame_flow = mod_gui.get_frame_flow(player)
+    if frame_flow.goals_browser then
+        frame_flow.goals_browser.destroy()
     end
 end
 
@@ -357,6 +558,84 @@ script.on_event(defines.events.on_gui_click, function(event)
     elseif string.match(element.name, "^move_down_(%d+)$") then
         local todo_id = tonumber(string.match(element.name, "^move_down_(%d+)$"))
         move_todo_down(todo_id)
+    
+    -- Goals browser events
+    elseif element.name == "enable_goals_button" then
+        create_goals_browser(player)
+    
+    elseif element.name == "goals_browser_close" then
+        destroy_goals_browser(player)
+    
+    elseif element.name == "goals_browser_apply" then
+        -- Apply goal selections
+        local frame_flow = mod_gui.get_frame_flow(player)
+        if frame_flow.goals_browser then
+            local new_active_goals = {}
+            
+            -- Check all goal checkboxes
+            for section_id, goal_list in pairs(GOAL_TEMPLATES) do
+                for _, goal_id in ipairs(goal_list) do
+                    local checkbox_name = "goal_checkbox_" .. goal_id
+                    local sections_list = frame_flow.goals_browser.sections_scroll.sections_list
+                    local section_frame = sections_list["section_" .. section_id]
+                    local goals_container = section_frame["goals_" .. section_id]
+                    local goal_flow = goals_container["goal_flow_" .. goal_id]
+                    if goal_flow and goal_flow[checkbox_name] and goal_flow[checkbox_name].state then
+                        table.insert(new_active_goals, goal_id)
+                    end
+                end
+            end
+            
+            storage.goal_settings.active_goals = new_active_goals
+            storage.goal_settings.goals_enabled = #new_active_goals > 0
+            
+            -- Create active goals if needed
+            for _, goal_id in ipairs(new_active_goals) do
+                local goal_exists = false
+                for _, existing_goal in ipairs(storage.goals) do
+                    if existing_goal.template_id == goal_id then
+                        goal_exists = true
+                        break
+                    end
+                end
+                
+                if not goal_exists then
+                    local new_goal = {
+                        id = storage.next_goal_id,
+                        template_id = goal_id,
+                        completed = false,
+                        created = game.tick
+                    }
+                    table.insert(storage.goals, new_goal)
+                    storage.next_goal_id = storage.next_goal_id + 1
+                end
+            end
+            
+            destroy_goals_browser(player)
+            
+            -- Refresh todo window to show/hide goals enable button
+            destroy_todo_window(player)
+            create_todo_window(player)
+            refresh_todo_list(player)
+        end
+    
+    elseif string.match(element.name, "^toggle_section_(.+)$") then
+        local section_id = string.match(element.name, "^toggle_section_(.+)$")
+        local frame_flow = mod_gui.get_frame_flow(player)
+        if frame_flow.goals_browser then
+            local sections_list = frame_flow.goals_browser.sections_scroll.sections_list
+            local section_frame = sections_list["section_" .. section_id]
+            local goals_container = section_frame["goals_" .. section_id]
+            local toggle_button = section_frame["header_" .. section_id]["toggle_section_" .. section_id]
+            
+            if goals_container.visible then
+                goals_container.visible = false
+                toggle_button.caption = {"gui-goals.section-collapse"}
+            else
+                goals_container.visible = true
+                toggle_button.caption = {"gui-goals.section-expand"}
+            end
+        end
     end
 end)
 
