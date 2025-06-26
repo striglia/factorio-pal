@@ -1,0 +1,9 @@
+{
+  "name": "factorio-todo",
+  "version": "0.1.0",
+  "title": "Factorio Todo",
+  "author": "factorio-pal",
+  "description": "A shared todo list for multiplayer Factorio sessions",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0"]
+}
