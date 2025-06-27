@@ -63,6 +63,55 @@ script.on_configuration_changed(function()
         if not todo.order then
             todo.order = i
         end
+        -- Add progress field to existing todos if missing
+        if not todo.progress then
+            todo.progress = parse_resource_goal(todo.text)
+        end
+    end
+end)
+
+-- Update progress for all trackable todos
+local function update_progress_tracking()
+    local needs_refresh = false
+    
+    for _, todo in pairs(storage.todos) do
+        if todo.progress and todo.progress.trackable and not todo.completed then
+            local old_current = todo.progress.current_count
+            local new_current = 0
+            
+            -- Check all connected players' inventories
+            for _, player in pairs(game.connected_players) do
+                local player_count = player.get_item_count(todo.progress.item_name)
+                new_current = math.max(new_current, player_count)
+            end
+            
+            todo.progress.current_count = new_current
+            
+            -- Auto-complete if target reached
+            if new_current >= todo.progress.target_count and not todo.completed then
+                todo.completed = true
+                needs_refresh = true
+                
+                -- Notify players of completion
+                for _, player in pairs(game.connected_players) do
+                    player.print("Todo completed: " .. todo.text)
+                end
+            elseif old_current ~= new_current then
+                needs_refresh = true
+            end
+        end
+    end
+    
+    if needs_refresh then
+        refresh_todo_list_for_all_players()
+    end
+end
+
+-- Set up periodic progress tracking
+script.on_event(defines.events.on_tick, function(event)
+    -- Update progress every 3 seconds (180 ticks at 60 UPS)
+    if event.tick % 180 == 0 then
+        update_progress_tracking()
     end
 end)
 
@@ -363,14 +412,43 @@ function refresh_todo_list(player)
             tooltip = "Toggle completion"
         }
         
-        -- Todo text with owner info
+        -- Todo text with owner info and progress
         local text_style = todo.completed and "disabled_label" or "label"
         local display_text = "[" .. todo.owner .. "] " .. todo.text
-        todo_flow.add{
+        
+        -- Add progress info to display text if trackable
+        if todo.progress and todo.progress.trackable then
+            display_text = display_text .. " (" .. todo.progress.current_count .. "/" .. todo.progress.target_count .. ")"
+        end
+        
+        -- Create vertical flow for text and progress bar
+        local text_progress_flow = todo_flow.add{
+            type = "flow",
+            name = "text_progress_flow_" .. todo.id,
+            direction = "vertical"
+        }
+        
+        text_progress_flow.add{
             type = "label",
             caption = display_text,
             style = text_style
         }
+        
+        -- Add progress bar for trackable todos
+        if todo.progress and todo.progress.trackable then
+            local progress_value = 0
+            if todo.progress.target_count > 0 then
+                progress_value = math.min(todo.progress.current_count / todo.progress.target_count, 1.0)
+            end
+            
+            local progress_bar = text_progress_flow.add{
+                type = "progressbar",
+                name = "progress_bar_" .. todo.id,
+                value = progress_value
+            }
+            progress_bar.style.width = 200
+            progress_bar.style.height = 12
+        end
         
         -- Reorder buttons
         local reorder_flow = todo_flow.add{
@@ -419,9 +497,78 @@ function refresh_todo_list(player)
     end
 end
 
+-- Parse resource goal from todo text
+local function parse_resource_goal(text)
+    -- Common item name mappings (display name -> internal name)
+    local item_mappings = {
+        ["iron plates"] = "iron-plate",
+        ["iron plate"] = "iron-plate",
+        ["copper plates"] = "copper-plate", 
+        ["copper plate"] = "copper-plate",
+        ["copper wire"] = "copper-cable",
+        ["copper cables"] = "copper-cable",
+        ["steel plates"] = "steel-plate",
+        ["steel plate"] = "steel-plate",
+        ["electronic circuits"] = "electronic-circuit",
+        ["electronic circuit"] = "electronic-circuit",
+        ["green circuits"] = "electronic-circuit",
+        ["advanced circuits"] = "advanced-circuit",
+        ["red circuits"] = "advanced-circuit",
+        ["processing units"] = "processing-unit",
+        ["blue circuits"] = "processing-unit",
+        ["coal"] = "coal",
+        ["stone"] = "stone",
+        ["wood"] = "wood",
+        ["iron ore"] = "iron-ore",
+        ["copper ore"] = "copper-ore",
+        ["stone brick"] = "stone-brick",
+        ["stone bricks"] = "stone-brick"
+    }
+    
+    local lower_text = string.lower(text)
+    
+    -- Pattern matching for resource goals
+    local patterns = {
+        "collect (%d+) (.+)",
+        "produce (%d+) (.+)", 
+        "gather (%d+) (.+)",
+        "get (%d+) (.+)",
+        "make (%d+) (.+)",
+        "craft (%d+) (.+)"
+    }
+    
+    for _, pattern in ipairs(patterns) do
+        local count_str, item_text = string.match(lower_text, pattern)
+        if count_str and item_text then
+            local target_count = tonumber(count_str)
+            if target_count and target_count > 0 then
+                -- Clean up item text (remove trailing 's', periods, etc.)
+                item_text = string.gsub(item_text, "%.$", "") -- remove trailing period
+                item_text = string.gsub(item_text, "s$", "") -- remove trailing s for plurals
+                item_text = string.gsub(item_text, "es$", "e") -- fix -es plurals
+                
+                -- Look up internal item name
+                local item_name = item_mappings[item_text] or item_text
+                
+                return {
+                    trackable = true,
+                    item_name = item_name,
+                    target_count = target_count,
+                    current_count = 0
+                }
+            end
+        end
+    end
+    
+    return nil -- Not a trackable resource goal
+end
+
 -- Add a new todo
 local function add_todo(player, text)
     if text == "" then return end
+    
+    -- Parse resource tracking from text
+    local progress_info = parse_resource_goal(text)
     
     local new_todo = {
         id = storage.next_todo_id,
@@ -429,7 +576,8 @@ local function add_todo(player, text)
         completed = false,
         owner = player.name,
         created = game.tick,
-        order = #storage.todos + 1
+        order = #storage.todos + 1,
+        progress = progress_info
     }
     
     table.insert(storage.todos, new_todo)
