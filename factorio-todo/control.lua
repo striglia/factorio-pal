@@ -50,6 +50,11 @@ script.on_configuration_changed(function()
             todo.progress = ProgressTracker.parse_resource_goal(todo.text)
         end
     end
+    
+    -- Create todo buttons for all existing players (when mod is first installed)
+    for _, player in pairs(game.players) do
+        GuiManager.create_todo_button(player)
+    end
 end)
 
 -- Set up periodic progress tracking
@@ -140,11 +145,5 @@ script.on_event(defines.events.on_gui_confirmed, function(event)
     end
 end)
 
--- Initialize buttons for existing players when mod is added
-script.on_load(function()
-    for _, player in pairs(game.players) do
-        if player.connected then
-            GuiManager.create_todo_button(player)
-        end
-    end
-end)
+-- Note: on_load cannot access game object or modify storage
+-- Player buttons will be created when players join via on_player_joined_game event

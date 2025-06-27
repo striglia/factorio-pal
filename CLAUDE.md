@@ -17,8 +17,13 @@ This repository develops AI-powered Factorio mods focused on parallel agent tool
 
 ### Key Commands
 - `./sync-mod.sh` or `/factorio-copy` - Sync mod to Factorio mods directory
+- `make test` - Run syntax validation and show test commands
+- `make test-syntax` - Validate Lua syntax for all files
+- `make help` - Show available Makefile commands
 - Test in-game immediately after sync
 - Check Factorio log for Lua errors: `~/Library/Application Support/Factorio/factorio-current.log`
+- Run automated tests: `/c require("tests/test_runner")` (in-game console)
+- Run specific test file: `/c require("tests/todo_manager_test")` (in-game console)
 
 ### Factorio Mod Development Context
 
@@ -138,6 +143,70 @@ surface.create_entity{
 - **File I/O** - Export game state for offline analysis
 - **Mod Settings** - AI configuration and tuning parameters
 
+## Testing Framework and Best Practices
+
+### Testing Setup
+- **FactorioTest Framework**: Integrated with optional dependency `? factorio-test >= 0.7.0`
+- **Test Directory**: All tests located in `/tests/` directory
+- **Test Runner**: Use `tests/test_runner.lua` to run all tests or individual test files
+
+### Running Tests
+
+#### Via Makefile (Recommended)
+```bash
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-gui          # Run GUI tests only  
+make test-goals        # Run goals integration tests
+make test-persistence  # Run persistence tests
+make test-performance  # Run performance tests
+make help              # Show all available commands
+```
+
+#### In-Game Console
+```lua
+-- Run all tests
+/c require("tests/test_runner")
+
+-- Run specific test modules
+/c require("tests/todo_manager_test")
+/c require("tests/gui_manager_test") 
+/c require("tests/goals_manager_test")
+/c require("tests/persistence_test")
+/c require("tests/performance_test")
+```
+
+### Test Categories
+1. **Unit Tests** (`todo_manager_test.lua`): Core functionality testing
+2. **GUI Tests** (`gui_manager_test.lua`): User interface component testing
+3. **Integration Tests** (`goals_manager_test.lua`): Feature integration testing
+4. **Persistence Tests** (`persistence_test.lua`): Save/load data integrity testing
+5. **Performance Tests** (`performance_test.lua`): UPS impact and efficiency testing
+
+### Testing Best Practices
+- **Real Environment Testing**: Tests run in actual Factorio game environment
+- **Storage Initialization**: Always initialize `storage` tables in test setup
+- **Cleanup**: Use `before_each` and `after_each` for test isolation
+- **Performance Monitoring**: Keep operations under performance thresholds
+- **Error Handling**: Test error conditions and edge cases
+- **Multi-player Testing**: Verify functionality with multiple players
+
+### Performance Guidelines
+- **UPS Target**: Maintain 60 UPS (16.667ms per tick)
+- **Operation Thresholds**: 
+  - Todo operations: < 50ms for 100 items
+  - GUI operations: < 40ms for refresh with 50 todos
+  - Bulk operations: < 30ms for cleanup tasks
+- **Memory Management**: Verify no memory leaks in repeated operations
+
+### Testing Workflow
+1. Write failing tests for new features
+2. Implement feature to pass tests
+3. Run full test suite before committing
+4. Test in actual game environment
+5. Profile performance impact
+6. Verify multiplayer compatibility
+
 ## Getting Started with New Mods
 
 1. Create mod directory with descriptive name
@@ -145,8 +214,9 @@ surface.create_entity{
 3. Start with minimal `control.lua` for event handling
 4. Add `data.lua` if creating new game content
 5. Test frequently with `/factorio-copy` sync
-6. Focus on single AI capability per mod
-7. Build modular components for reuse
+6. **Write tests early** - Set up testing framework first
+7. Focus on single AI capability per mod
+8. Build modular components for reuse
 
 ## Recommended Reading
 
